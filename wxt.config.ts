@@ -6,7 +6,7 @@ export default defineConfig({
   manifest: {
     name: 'Twenty CRM - LinkedIn Capture',
     description: 'Capture LinkedIn profiles and companies to your Twenty CRM',
-    version: '1.1.0',
+    version: '1.2.0',
     permissions: ['storage', 'activeTab'],
     host_permissions: ['*://*.linkedin.com/*', '*://*/*'],
     icons: {
