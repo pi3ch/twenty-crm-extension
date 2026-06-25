@@ -6,6 +6,7 @@ import type {
   CreateCompanyResult,
   LinkedInProfileData,
   LinkedInCompanyData,
+  CustomFieldConfig,
 } from '../types';
 import { isCountryName, canonicalCountry } from './countries';
 
@@ -194,6 +195,8 @@ export class TwentyApiClient {
   private token: string | null = null;
   // Cache of writable field names per input type (from GraphQL introspection)
   private inputFieldsCache = new Map<string, Set<string>>();
+  // Optional custom-field mappings (owner / lead status / lead source)
+  private customFields: CustomFieldConfig = {};
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -201,6 +204,55 @@ export class TwentyApiClient {
 
   setToken(token: string) {
     this.token = token;
+  }
+
+  setCustomFields(customFields: CustomFieldConfig | undefined) {
+    this.customFields = customFields || {};
+  }
+
+  // Fetch workspace members so the user can pick a record owner in settings.
+  // Returns [] (not an error) if the API/endpoint doesn't expose them.
+  async getWorkspaceMembers(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const result = await this.graphqlRequest<{
+        workspaceMembers: { edges: { node: { id: string; name?: { firstName?: string; lastName?: string } } }[] };
+      }>(
+        `query WorkspaceMembers {
+          workspaceMembers(first: 200) {
+            edges { node { id name { firstName lastName } } }
+          }
+        }`
+      );
+      if (result.errors?.length) {
+        console.warn('[Twenty] Could not list workspace members:', result.errors[0].message);
+        return [];
+      }
+      return (result.data?.workspaceMembers?.edges || []).map((e) => ({
+        id: e.node.id,
+        name: `${e.node.name?.firstName || ''} ${e.node.name?.lastName || ''}`.trim() || e.node.id,
+      }));
+    } catch (error) {
+      console.warn('[Twenty] Error listing workspace members:', error);
+      return [];
+    }
+  }
+
+  // Build the optional custom-field inputs for a NEW record. Each is only
+  // included when fully configured, so unconfigured workspaces send nothing.
+  private buildCustomCreateFields(opts: { includeLead: boolean }): Record<string, unknown> {
+    const cf = this.customFields;
+    const out: Record<string, unknown> = {};
+
+    if (cf.accountOwnerField && cf.accountOwnerMemberId) {
+      // Relations are written via "<field>Id"
+      const key = cf.accountOwnerField.endsWith('Id') ? cf.accountOwnerField : `${cf.accountOwnerField}Id`;
+      out[key] = cf.accountOwnerMemberId;
+    }
+    if (opts.includeLead) {
+      if (cf.leadStatusField && cf.leadStatusNewValue) out[cf.leadStatusField] = cf.leadStatusNewValue;
+      if (cf.leadSourceField && cf.leadSourceValue) out[cf.leadSourceField] = cf.leadSourceValue;
+    }
+    return out;
   }
 
   private async graphqlRequest<T>(
@@ -452,10 +504,7 @@ export class TwentyApiClient {
   private async createCompanySimple(
     name: string
   ): Promise<CreateCompanyResult['createCompany']> {
-    const result = await this.graphqlMutate<CreateCompanyResult>(
-      CREATE_COMPANY,
-      { input: { name } }
-    );
+    const result = await this.createCompanyWithOwner({ name });
 
     if (result.errors?.length) {
       throw new Error(result.errors[0].message);
@@ -466,6 +515,22 @@ export class TwentyApiClient {
     }
 
     return result.data.createCompany;
+  }
+
+  // Create a company, assigning the configured owner on new records, with a
+  // best-effort fallback that retries without the owner if it's rejected.
+  private async createCompanyWithOwner(
+    coreInput: Record<string, unknown>
+  ): Promise<GraphQLResponse<CreateCompanyResult>> {
+    const optional = this.buildCustomCreateFields({ includeLead: false });
+    let result = await this.graphqlMutate<CreateCompanyResult>(CREATE_COMPANY, {
+      input: { ...coreInput, ...optional },
+    });
+    if (result.errors?.length && Object.keys(optional).length) {
+      console.warn('[Twenty] Owner field rejected on company, retrying without it:', result.errors[0]?.message);
+      result = await this.graphqlMutate<CreateCompanyResult>(CREATE_COMPANY, { input: coreInput });
+    }
+    return result;
   }
 
   async createPerson(
@@ -515,7 +580,19 @@ export class TwentyApiClient {
     }
     if (companyId) input.companyId = companyId;
 
-    const result = await this.graphqlMutate<CreatePersonResult>(CREATE_PERSON, { input });
+    // Owner + lead status/source are set only on new People (never on updates,
+    // so an existing record's owner/status is never clobbered).
+    const optional = this.buildCustomCreateFields({ includeLead: true });
+    let result = await this.graphqlMutate<CreatePersonResult>(CREATE_PERSON, {
+      input: { ...input, ...optional },
+    });
+
+    // Best-effort: if a custom field is rejected by a value/option mismatch that
+    // field-pruning can't fix, retry with core fields only so capture still works.
+    if (result.errors?.length && Object.keys(optional).length) {
+      console.warn('[Twenty] Optional custom fields rejected, retrying without them:', result.errors[0]?.message);
+      result = await this.graphqlMutate<CreatePersonResult>(CREATE_PERSON, { input });
+    }
 
     if (result.errors?.length) {
       throw new Error(result.errors[0].message);
@@ -546,7 +623,7 @@ export class TwentyApiClient {
       if (employees !== undefined) input.employees = employees;
     }
 
-    const result = await this.graphqlMutate<CreateCompanyResult>(CREATE_COMPANY, { input });
+    const result = await this.createCompanyWithOwner(input);
 
     if (result.errors?.length) {
       throw new Error(result.errors[0].message);

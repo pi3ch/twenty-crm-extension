@@ -2,6 +2,26 @@
 
 All notable changes to Twenty CRM LinkedIn Capture Extension.
 
+## [1.2.0] - 2026-06-25
+
+### Added
+
+- Optional custom-field mapping, configured in an "Optional custom fields"
+  section in the popup (off by default, settings synced):
+  - Account owner — a workspace member assigned as the owner of new People and
+    Companies, chosen from a dropdown (with a manual member-ID fallback).
+  - Lead status — a select field set to its "new" value on newly created People.
+  - Lead source — a select field set to a fixed value on newly created People.
+- These apply on record creation only, so updates never overwrite an existing
+  record's owner, status, or source.
+
+### Notes
+
+- The feature has no effect on workspaces that leave it unconfigured. Unknown
+  fields are pruned automatically, and a value/option mismatch falls back to
+  creating the record without the optional fields, so a misconfiguration can
+  never block a capture.
+
 ## [1.1.0] - 2026-06-25
 
 ### Changed

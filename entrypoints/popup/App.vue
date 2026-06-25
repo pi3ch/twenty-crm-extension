@@ -1,11 +1,14 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue';
-import type { ExtensionResponse } from '../../types';
+import type { ExtensionResponse, CustomFieldConfig } from '../../types';
 
 // State
 const twentyUrl = ref('');
 const apiKey = ref('');
 const hasToken = ref(false);
+const showAdvanced = ref(false);
+const customFields = ref<CustomFieldConfig>({});
+const members = ref<Array<{ id: string; name: string }>>([]);
 const isConnected = ref(false);
 const isLoading = ref(true);
 const isSaving = ref(false);
@@ -58,14 +61,16 @@ async function loadSettings() {
   try {
     const response = await browser.runtime.sendMessage({
       type: 'GET_SETTINGS',
-    }) as ExtensionResponse<{ twentyUrl: string; hasToken: boolean }>;
-    
+    }) as ExtensionResponse<{ twentyUrl: string; hasToken: boolean; customFields?: CustomFieldConfig }>;
+
     if (response.success && response.data) {
       twentyUrl.value = response.data.twentyUrl || '';
       hasToken.value = response.data.hasToken || false;
-      
+      customFields.value = response.data.customFields || {};
+
       if (hasToken.value) {
         await testConnection();
+        await loadMembers();
       }
     }
   } catch (err) {
@@ -73,6 +78,19 @@ async function loadSettings() {
     error.value = 'Failed to load settings';
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function loadMembers() {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'GET_WORKSPACE_MEMBERS',
+    }) as ExtensionResponse<Array<{ id: string; name: string }>>;
+    if (response.success && response.data) {
+      members.value = response.data;
+    }
+  } catch (err) {
+    console.error('Error loading workspace members:', err);
   }
 }
 
@@ -111,7 +129,10 @@ async function saveSettings() {
   try {
     // Only send the API key when the user actually entered one, so re-saving
     // the URL doesn't wipe a previously stored key.
-    const payload: { twentyUrl: string; apiKey?: string } = { twentyUrl: url };
+    const payload: { twentyUrl: string; apiKey?: string; customFields: CustomFieldConfig } = {
+      twentyUrl: url,
+      customFields: customFields.value,
+    };
     if (apiKey.value.trim()) {
       payload.apiKey = apiKey.value.trim();
     }
@@ -267,6 +288,65 @@ function formatDate(timestamp: number): string {
         </div>
         <div v-if="success" class="message message--success">
           {{ success }}
+        </div>
+      </section>
+
+      <!-- Optional custom fields -->
+      <section class="section">
+        <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+          <span>{{ showAdvanced ? '▾' : '▸' }}</span> Optional custom fields
+        </button>
+
+        <div v-if="showAdvanced" class="advanced">
+          <p class="hint">
+            For Twenty workspaces with these custom fields. Leave blank to disable;
+            values are only set when creating new records.
+          </p>
+
+          <div class="form-group">
+            <label class="label">Account owner field (API name)</label>
+            <input
+              v-model="customFields.accountOwnerField"
+              type="text"
+              class="input"
+              placeholder="accountOwner (set via accountOwnerId)"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="label">Owner (workspace member)</label>
+            <select v-if="members.length" v-model="customFields.accountOwnerMemberId" class="input">
+              <option value="">— none —</option>
+              <option v-for="m in members" :key="m.id" :value="m.id">{{ m.name }}</option>
+            </select>
+            <input
+              v-else
+              v-model="customFields.accountOwnerMemberId"
+              type="text"
+              class="input"
+              placeholder="workspace member ID"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="label">Lead status field / value for new</label>
+            <div class="field-row">
+              <input v-model="customFields.leadStatusField" type="text" class="input" placeholder="leadStatus" />
+              <input v-model="customFields.leadStatusNewValue" type="text" class="input" placeholder="NEW" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="label">Lead source field / value</label>
+            <div class="field-row">
+              <input v-model="customFields.leadSourceField" type="text" class="input" placeholder="leadSource" />
+              <input v-model="customFields.leadSourceValue" type="text" class="input" placeholder="LINKEDIN" />
+            </div>
+          </div>
+
+          <button class="btn btn--primary" :disabled="isSaving" @click="saveSettings">
+            {{ isSaving ? 'Saving...' : 'Save' }}
+          </button>
         </div>
       </section>
 
@@ -472,6 +552,32 @@ function formatDate(timestamp: number): string {
 }
 
 .button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.advanced-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.advanced-toggle span {
+  display: inline-block;
+  width: 12px;
+}
+
+.advanced {
+  margin-top: 12px;
+}
+
+.field-row {
   display: flex;
   gap: 8px;
 }

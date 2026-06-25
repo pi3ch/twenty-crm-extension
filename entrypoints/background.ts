@@ -1,6 +1,6 @@
 import { TwentyApiClient } from '../utils/twenty-api';
 import { getSettings, saveSettings, addToRecentCaptures, getRecentCaptures } from '../utils/storage';
-import type { ExtensionMessage, ExtensionResponse, LinkedInProfileData, LinkedInCompanyData } from '../types';
+import type { ExtensionMessage, ExtensionResponse, LinkedInProfileData, LinkedInCompanyData, ExtensionSettings } from '../types';
 
 // Cache for API client
 let apiClient: TwentyApiClient | null = null;
@@ -25,6 +25,7 @@ async function getApiClient(): Promise<TwentyApiClient> {
   }
 
   apiClient.setToken(settings.apiKey);
+  apiClient.setCustomFields(settings.customFields);
   return apiClient;
 }
 
@@ -207,7 +208,7 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
       }
 
       case 'SAVE_SETTINGS': {
-        const newSettings = message.payload as { twentyUrl?: string; apiKey?: string };
+        const newSettings = message.payload as Partial<ExtensionSettings>;
         console.log('Saving settings:', { ...newSettings, apiKey: newSettings.apiKey ? '***' : undefined });
         await saveSettings(newSettings);
         // Clear cached client when URL or key changes
@@ -227,6 +228,12 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
       case 'GET_RECENT_CAPTURES': {
         const captures = await getRecentCaptures();
         return { success: true, data: captures };
+      }
+
+      case 'GET_WORKSPACE_MEMBERS': {
+        const client = await getApiClient();
+        const members = await client.getWorkspaceMembers();
+        return { success: true, data: members };
       }
       
       case 'SEARCH_RECORDS': {
