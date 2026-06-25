@@ -87,6 +87,7 @@ export type MessageType =
   | 'SAVE_SETTINGS'
   | 'TEST_CONNECTION'
   | 'GET_RECENT_CAPTURES'
+  | 'GET_WORKSPACE_MEMBERS'
   | 'SCRAPE_PAGE';
 
 export type ExtensionMessage = {
@@ -100,10 +101,27 @@ export type ExtensionResponse<T = unknown> = {
   error?: string;
 };
 
+// Optional custom-field mappings. All blank by default — when a value is empty
+// the corresponding field is simply not sent, so this never affects workspaces
+// that don't have these custom fields configured.
+export type CustomFieldConfig = {
+  // Relation field to a workspace member (e.g. "accountOwner"); the member is
+  // assigned as the record owner on new People and Companies.
+  accountOwnerField?: string;
+  accountOwnerMemberId?: string;
+  // Select field set to its "new" value on newly created People (e.g. "leadStatus" -> "NEW").
+  leadStatusField?: string;
+  leadStatusNewValue?: string;
+  // Select field set to a fixed value on newly created People (e.g. "leadSource" -> "LINKEDIN").
+  leadSourceField?: string;
+  leadSourceValue?: string;
+};
+
 // Settings
 export type ExtensionSettings = {
   twentyUrl: string;
   apiKey: string;
+  customFields: CustomFieldConfig;
 };
 
 // GraphQL Response Types

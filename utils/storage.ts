@@ -1,5 +1,5 @@
 import { storage } from '#imports';
-import type { ExtensionSettings } from '../types';
+import type { ExtensionSettings, CustomFieldConfig } from '../types';
 
 // Define storage items with proper typing
 export const twentyUrlStorage = storage.defineItem<string>('sync:twentyUrl', {
@@ -9,6 +9,11 @@ export const twentyUrlStorage = storage.defineItem<string>('sync:twentyUrl', {
 // API key is a secret — keep it in local storage only, never synced across devices
 export const apiKeyStorage = storage.defineItem<string>('local:apiKey', {
   fallback: '',
+});
+
+// Optional custom-field mappings (not secret) — synced across the user's devices
+export const customFieldsStorage = storage.defineItem<CustomFieldConfig>('sync:customFields', {
+  fallback: {},
 });
 
 export const lastCapturedStorage = storage.defineItem<Array<{
@@ -23,11 +28,12 @@ export const lastCapturedStorage = storage.defineItem<Array<{
 
 // Helper functions
 export async function getSettings(): Promise<ExtensionSettings> {
-  const [twentyUrl, apiKey] = await Promise.all([
+  const [twentyUrl, apiKey, customFields] = await Promise.all([
     twentyUrlStorage.getValue(),
     apiKeyStorage.getValue(),
+    customFieldsStorage.getValue(),
   ]);
-  return { twentyUrl, apiKey };
+  return { twentyUrl, apiKey, customFields };
 }
 
 export async function saveSettings(settings: Partial<ExtensionSettings>): Promise<void> {
@@ -36,6 +42,9 @@ export async function saveSettings(settings: Partial<ExtensionSettings>): Promis
   }
   if (settings.apiKey !== undefined) {
     await apiKeyStorage.setValue(settings.apiKey);
+  }
+  if (settings.customFields !== undefined) {
+    await customFieldsStorage.setValue(settings.customFields);
   }
 }
 
